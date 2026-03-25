@@ -6,6 +6,7 @@ use rmcp::{ServerHandler, tool, tool_handler, tool_router};
 use serde::Deserialize;
 
 use crate::obsidian;
+use crate::secret;
 
 pub struct ObsidianTools {
     tool_router: ToolRouter<Self>,
@@ -114,22 +115,42 @@ pub struct DeleteParams {
 #[tool_router]
 impl ObsidianTools {
     /// Read a file from the Obsidian vault. Returns the full content of the file.
+    /// When OBSIDIAN_HIDE_SECRET is enabled, secrets are replaced with [SECRET:N] placeholders.
     #[tool(name = "obsidian_read")]
     fn read(&self, Parameters(params): Parameters<ReadParams>) -> Result<String, String> {
         let content = obsidian::run(&params.vault, &["read", &format!("path={}", params.path)])
             .map_err(|e| e.to_string())?;
+
+        let content = if secret::is_enabled() {
+            secret::mask(&content).masked
+        } else {
+            content
+        };
+
         Ok(obsidian::apply_line_range(&content, params.offset, params.limit))
     }
 
     /// Create or overwrite a file in the Obsidian vault.
+    /// When OBSIDIAN_HIDE_SECRET is enabled, all [SECRET:N] IDs from the original file
+    /// must be present in the content. They are expanded back to original text before writing.
     #[tool(name = "obsidian_write")]
     fn write(&self, Parameters(params): Parameters<WriteParams>) -> Result<String, String> {
+        let mut content = params.content.clone();
+
+        if secret::is_enabled() {
+            if let Ok(existing) = obsidian::run(&params.vault, &["read", &format!("path={}", params.path)]) {
+                if secret::has_secrets(&existing) {
+                    content = secret::expand_write(&existing, &content)?;
+                }
+            }
+        }
+
         obsidian::run(
             &params.vault,
             &[
                 "create",
                 &format!("path={}", params.path),
-                &format!("content={}", params.content),
+                &format!("content={}", content),
                 "overwrite",
             ],
         )
@@ -138,14 +159,22 @@ impl ObsidianTools {
     }
 
     /// Edit a file in the Obsidian vault by replacing an exact string match. The old_string must be unique in the file.
+    /// When OBSIDIAN_HIDE_SECRET is enabled, [SECRET:N] placeholders in old_string/new_string
+    /// are expanded to the original content. The number of secrets must not change.
     #[tool(name = "obsidian_edit")]
     fn edit(&self, Parameters(params): Parameters<EditParams>) -> Result<String, String> {
         let content = obsidian::run(&params.vault, &["read", &format!("path={}", params.path)])
             .map_err(|e| e.to_string())?;
 
+        let (old_string, new_string) = if secret::is_enabled() {
+            secret::expand_edit(&content, &params.old_string, &params.new_string)?
+        } else {
+            (params.old_string.clone(), params.new_string.clone())
+        };
+
         let replace_all = params.replace_all.unwrap_or(false);
         let new_content =
-            obsidian::replace_content(&content, &params.old_string, &params.new_string, replace_all)?;
+            obsidian::replace_content(&content, &old_string, &new_string, replace_all)?;
 
         obsidian::run(
             &params.vault,
@@ -194,7 +223,16 @@ impl ObsidianTools {
         }
         let args_refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
 
-        obsidian::run(&params.vault, &args_refs).map_err(|e| e.to_string())
+        let result = obsidian::run(&params.vault, &args_refs).map_err(|e| e.to_string())?;
+
+        if secret::is_enabled() {
+            let masked = secret::mask(&result).masked;
+            // Filter out result lines that contain secrets to prevent leaking
+            // the fact that a search term matched inside a secret region
+            Ok(secret::filter_secret_lines(&masked))
+        } else {
+            Ok(result)
+        }
     }
 
     /// List files and folders in a vault directory.
@@ -265,7 +303,24 @@ impl ObsidianTools {
 impl ServerHandler for ObsidianTools {
     fn get_info(&self) -> ServerInfo {
         let mut info = ServerInfo::default();
-        info.instructions = Some("Obsidian vault tools mirroring Claude Code's Read/Edit/Write/Glob/Grep/LS interface.".into());
+        let hide_secret = if secret::is_enabled() {
+            concat!(
+                "\n\n## Secret hiding (currently active)\n",
+                "Files may contain [SECRET:N] placeholders replacing confidential content ",
+                "(Obsidian ==highlights== and [!secret] callouts).\n",
+                "Rules:\n",
+                "- Do NOT attempt to guess, decode, or reconstruct secret content.\n",
+                "- When editing, every [SECRET:N] from old_string must appear in new_string with the same ID. ",
+                "You may reorder them but must not add, remove, or change any ID.\n",
+                "- When writing, all [SECRET:N] IDs from the original file must be present.\n",
+                "- Search results matching inside secret regions are automatically filtered out.\n",
+            )
+        } else {
+            ""
+        };
+        info.instructions = Some(format!(
+            "Obsidian vault tools mirroring Claude Code's Read/Edit/Write/Glob/Grep/LS interface.{hide_secret}"
+        ).into());
         info
     }
 }

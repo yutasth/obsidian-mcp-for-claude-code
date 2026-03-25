@@ -1,5 +1,7 @@
 # obsidian-mcp
 
+[English](README.en.md)
+
 Claude Code から Obsidian Vault をファイルシステムのように扱える MCP サーバー。
 
 Claude Code の組み込みツール（Read, Edit, Write, Glob, Grep, LS）と同じ感覚で Obsidian Vault を操作できる。Vault へのアクセスは [Obsidian 公式 CLI](https://obsidian.md/help/cli) を経由するため、Obsidian のインデックスやリンク管理と整合性が保たれる。
@@ -59,6 +61,53 @@ MCP の obsidian_* ツールを使うこと。対応は以下の通り:
 | `obsidian_mkdir` | ディレクトリ作成 | ファイルシステム直接操作 |
 | `obsidian_delete` | ファイル・空フォルダの削除 | `obsidian delete` + ファイルシステム（フォルダ） |
 
+## Secret モード
+
+環境変数 `OBSIDIAN_HIDE_SECRET=true` を設定すると、Obsidian の特定の記法で書かれた機密情報が Claude Code から隠される。社内文書や個人の秘密情報を含む vault を扱うときに有効。
+
+### 対象となる記法
+
+**ハイライト構文** (`==` で囲む):
+
+```markdown
+プロジェクトのコードネームは ==Project Aurora== です。
+担当者の連絡先: ==090-xxxx-xxxx==
+```
+
+**`[!secret]` コールアウト**:
+
+```markdown
+> [!secret]
+> 契約金額: 5,000万円
+> 契約期間: 2026年4月〜2027年3月
+```
+
+### Claude Code から見える内容
+
+上記の記法は `[SECRET:N]` プレースホルダーに置換される:
+
+```markdown
+プロジェクトのコードネームは [SECRET:1] です。
+担当者の連絡先: [SECRET:2]
+[SECRET:3]
+```
+
+### ルール
+
+- **read/grep**: 秘密は `[SECRET:N]` に置換される。grep で秘密の内部にマッチした結果は自動的に除外される
+- **edit**: `old_string` と `new_string` に含まれる `[SECRET:N]` の ID 集合が一致していなければ拒否。順序の入れ替えはOK
+- **write**: 元ファイルの全 `[SECRET:N]` ID が含まれていなければ拒否。ID が揃っていれば書き込み可能
+- 秘密の追加・削除は Obsidian 上で直接行う
+
+### 有効化
+
+`.mcp.json` の `env` に `OBSIDIAN_HIDE_SECRET` を設定する。`dist/mcp.json.secret.example` をコピーして使うのが簡単:
+
+```sh
+cp dist/mcp.json.secret.example .mcp.json
+# .mcp.json 内の command パスを実際のバイナリパスに書き換える
+```
+
 ## 前提条件
 
 - [Obsidian](https://obsidian.md/) が起動していること
@@ -84,6 +133,18 @@ claude mcp add obsidian-mcp --scope project -- "$(pwd)/dist/obsidian-mcp"
 ```sh
 claude mcp add obsidian-mcp --scope project -- /path/to/dist/obsidian-mcp
 ```
+
+または、`dist/` 内のサンプル設定をコピーして `.mcp.json` として使う:
+
+```sh
+# 通常版
+cp dist/mcp.json.example .mcp.json
+
+# Secret モード有効版
+cp dist/mcp.json.secret.example .mcp.json
+```
+
+`.mcp.json` は Claude Code が MCP サーバーの起動コマンドと環境変数を読み取る設定ファイル。`env` フィールドで `OBSIDIAN_HIDE_SECRET` などの環境変数を設定できる。
 
 ## 設計思想
 
@@ -113,8 +174,9 @@ src/
 tests/
   integration.rs  # 実 vault に対する統合テスト
 dist/
-  obsidian-mcp    # リリースバイナリ（make build で生成、git 管理外）
-  .mcp.json       # 配布用 MCP 設定テンプレート
+  obsidian-mcp              # リリースバイナリ（make build で生成、git 管理外）
+  mcp.json.example          # MCP 設定テンプレート（通常版）
+  mcp.json.secret.example   # MCP 設定テンプレート（Secret モード有効版）
 Makefile          # build / test / clean
 ```
 

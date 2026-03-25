@@ -1,5 +1,5 @@
 /target
 /dist/*
-!/dist/.mcp.json
+!/dist/*.example
 .DS_Store
 settings.local.json
