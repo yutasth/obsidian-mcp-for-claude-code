@@ -61,9 +61,75 @@ MCP の obsidian_* ツールを使うこと。対応は以下の通り:
 | `obsidian_mkdir` | ディレクトリ作成 | ファイルシステム直接操作 |
 | `obsidian_delete` | ファイル・空フォルダの削除 | `obsidian delete` + ファイルシステム（フォルダ） |
 
+## 前提条件
+
+- [Obsidian](https://obsidian.md/) が起動していること
+- [Obsidian CLI](https://obsidian.md/help/cli) (`obsidian` コマンド) が利用可能であること — Obsidian の設定 → 一般 → CLI ツールからインストールできる
+- [Rust toolchain](https://rustup.rs/) (1.94.0+)
+
+## セットアップ
+
+```sh
+# 1. リポジトリをクローン
+git clone https://github.com/yutasth/obsidian-cli-for-claude-code.git
+cd obsidian-cli-for-claude-code
+
+# 2. ビルド
+make build
+```
+
+## 設定
+
+### 環境変数
+
+| 環境変数 | 説明 | 必須 |
+|---|---|---|
+| `OBSIDIAN_VAULT` | デフォルトの vault 名。設定すると各ツールの `vault` パラメータを省略できる | 推奨 |
+| `OBSIDIAN_HIDE_SECRET` | `true` にすると [Secret モード](#secret-モード) が有効になる | 任意 |
+
+### MCP サーバーの登録
+
+`claude mcp add` で登録する場合、`-e` で環境変数を渡せる:
+
+```sh
+claude mcp add obsidian-mcp --scope project \
+  -e OBSIDIAN_VAULT=my-vault \
+  -- /path/to/dist/obsidian-mcp
+```
+
+または、`dist/` 内のサンプル設定をコピーして `.mcp.json` として使う:
+
+```sh
+cp dist/mcp.json.example .mcp.json
+```
+
+`.mcp.json` の例（全環境変数を設定する場合）:
+
+```json
+{
+  "mcpServers": {
+    "obsidian-mcp": {
+      "command": "/path/to/dist/obsidian-mcp",
+      "env": {
+        "OBSIDIAN_VAULT": "my-vault",
+        "OBSIDIAN_HIDE_SECRET": "true"
+      }
+    }
+  }
+}
+```
+
+### vault パラメータの解決順序
+
+1. ツール呼び出し時に `vault` を明示的に指定 → それを使う
+2. 省略した場合 → 環境変数 `OBSIDIAN_VAULT` にフォールバック
+3. どちらもない → エラー
+
+複数 vault を使い分けたい場合は、デフォルトを環境変数で設定し、必要なときだけ `vault` を指定すればよい。
+
 ## Secret モード
 
-環境変数 `OBSIDIAN_HIDE_SECRET=true` を設定すると、Obsidian の特定の記法で書かれた機密情報が Claude Code から隠される。社内文書や個人の秘密情報を含む vault を扱うときに有効。
+環境変数 `OBSIDIAN_HIDE_SECRET=true` を設定すると、Obsidian の特定の記法で書かれた機密情報が Claude Code から隠される。社内文書や個人の秘密情報を含む vault を扱うときに有効。設定方法は[設定](#設定)セクションを参照。
 
 ### 対象となる記法
 
@@ -99,86 +165,6 @@ MCP の obsidian_* ツールを使うこと。対応は以下の通り:
 - **write**: 元ファイルの全 `[SECRET:N]` ID が含まれていなければ拒否。ID が揃っていれば書き込み可能
 - 秘密の追加・削除は Obsidian 上で直接行う
 
-### 有効化
-
-`.mcp.json` の `env` に `OBSIDIAN_HIDE_SECRET` を設定する。`dist/mcp.json.secret.example` をコピーして使うのが簡単:
-
-```sh
-cp dist/mcp.json.secret.example .mcp.json
-# .mcp.json 内の command パスを実際のバイナリパスに書き換える
-```
-
-## 前提条件
-
-- [Obsidian](https://obsidian.md/) が起動していること
-- [Obsidian CLI](https://obsidian.md/help/cli) (`obsidian` コマンド) が利用可能であること — Obsidian の設定 → 一般 → CLI ツールからインストールできる
-- [Rust toolchain](https://rustup.rs/) (1.94.0+)
-
-## セットアップ
-
-```sh
-# 1. リポジトリをクローン
-git clone https://github.com/yutasth/obsidian-cli-for-claude-code.git
-cd obsidian-cli-for-claude-code
-
-# 2. ビルド
-make build
-
-# 3. Claude Code に MCP サーバーを登録
-claude mcp add obsidian-mcp --scope project -- "$(pwd)/dist/obsidian-mcp"
-```
-
-他のプロジェクトから使う場合は、バイナリの絶対パスを指定して登録する:
-
-```sh
-claude mcp add obsidian-mcp --scope project -- /path/to/dist/obsidian-mcp
-```
-
-または、`dist/` 内のサンプル設定をコピーして `.mcp.json` として使う:
-
-```sh
-# 通常版
-cp dist/mcp.json.example .mcp.json
-
-# Secret モード有効版
-cp dist/mcp.json.secret.example .mcp.json
-```
-
-`.mcp.json` は Claude Code が MCP サーバーの起動コマンドと環境変数を読み取る設定ファイル。`env` フィールドで `OBSIDIAN_HIDE_SECRET` などの環境変数を設定できる。
-
-## Vault の指定
-
-すべてのツールに `vault` パラメータがあるが、環境変数 `OBSIDIAN_VAULT` を設定しておけば省略できる。Claude Code の組み込みツール（Read, Edit 等）にはない vault 指定を毎回行う必要がなくなる。
-
-```sh
-# claude mcp add のときに環境変数を渡す
-claude mcp add obsidian-mcp --scope project -e OBSIDIAN_VAULT=my-vault -- /path/to/dist/obsidian-mcp
-```
-
-または `.mcp.json` の `env` に設定する:
-
-```json
-{
-  "mcpServers": {
-    "obsidian-mcp": {
-      "command": "/path/to/dist/obsidian-mcp",
-      "env": {
-        "OBSIDIAN_VAULT": "my-vault"
-      }
-    }
-  }
-}
-```
-
-`vault` パラメータを明示的に指定した場合は環境変数より優先される。複数 vault を使い分けたい場合は、デフォルトを環境変数で設定し、必要なときだけ `vault` を指定すればよい。
-
-## 設計思想
-
-- **Claude Code にとって直感的**: 組み込みツールと同じパラメータ体系。`vault` は省略可能で、環境変数によるデフォルト指定に対応
-- **Obsidian と整合的**: Vault アクセスは原則として公式 CLI 経由。リンク更新やインデックスが壊れない
-  - 例外: フォルダの作成(`mkdir`)と削除(`delete` のフォルダ対応)は公式 CLI が未対応のため、vault パスを解決した上でファイルシステムを直接操作する
-- **安全**: フォルダ削除は空の場合のみ許可。vault 外へのパス操作はガードされている
-
 ## テスト
 
 ```sh
@@ -201,6 +187,13 @@ OBSIDIAN_TEST_VAULT=obsidian-mcp-test make test
 ```
 
 テストは vault 内の `_test_obsidian_mcp/` ディレクトリに一時ファイルを作成し、テスト完了後にディレクトリごと削除する。
+
+## 設計思想
+
+- **Claude Code にとって直感的**: 組み込みツールと同じパラメータ体系。`vault` は省略可能で、環境変数によるデフォルト指定に対応
+- **Obsidian と整合的**: Vault アクセスは原則として公式 CLI 経由。リンク更新やインデックスが壊れない
+  - 例外: フォルダの作成(`mkdir`)と削除(`delete` のフォルダ対応)は公式 CLI が未対応のため、vault パスを解決した上でファイルシステムを直接操作する
+- **安全**: フォルダ削除は空の場合のみ許可。vault 外へのパス操作はガードされている
 
 ## プロジェクト構成
 

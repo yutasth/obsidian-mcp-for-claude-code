@@ -61,9 +61,75 @@ Use alongside built-in tools to reference and update vault notes while coding. T
 | `obsidian_mkdir` | Create a directory | Direct filesystem operation |
 | `obsidian_delete` | Delete a file or empty folder | `obsidian delete` + filesystem (folders) |
 
+## Prerequisites
+
+- [Obsidian](https://obsidian.md/) must be running
+- [Obsidian CLI](https://obsidian.md/help/cli) (`obsidian` command) must be available — install from Obsidian Settings → General → CLI tools
+- [Rust toolchain](https://rustup.rs/) (1.94.0+)
+
+## Setup
+
+```sh
+# 1. Clone the repository
+git clone https://github.com/yutasth/obsidian-cli-for-claude-code.git
+cd obsidian-cli-for-claude-code
+
+# 2. Build
+make build
+```
+
+## Configuration
+
+### Environment variables
+
+| Variable | Description | Required |
+|---|---|---|
+| `OBSIDIAN_VAULT` | Default vault name. When set, the `vault` parameter can be omitted from tool calls | Recommended |
+| `OBSIDIAN_HIDE_SECRET` | Set to `true` to enable [Secret mode](#secret-mode) | Optional |
+
+### Registering the MCP server
+
+With `claude mcp add`, pass environment variables via `-e`:
+
+```sh
+claude mcp add obsidian-mcp --scope project \
+  -e OBSIDIAN_VAULT=my-vault \
+  -- /path/to/dist/obsidian-mcp
+```
+
+Alternatively, copy a sample config from `dist/` and use it as `.mcp.json`:
+
+```sh
+cp dist/mcp.json.example .mcp.json
+```
+
+Example `.mcp.json` with all environment variables:
+
+```json
+{
+  "mcpServers": {
+    "obsidian-mcp": {
+      "command": "/path/to/dist/obsidian-mcp",
+      "env": {
+        "OBSIDIAN_VAULT": "my-vault",
+        "OBSIDIAN_HIDE_SECRET": "true"
+      }
+    }
+  }
+}
+```
+
+### Vault resolution order
+
+1. Explicit `vault` parameter in the tool call → used as-is
+2. Omitted → falls back to the `OBSIDIAN_VAULT` environment variable
+3. Neither set → error
+
+If you work with multiple vaults, set the default via the env var and override per-call when needed.
+
 ## Secret Mode
 
-Set `OBSIDIAN_HIDE_SECRET=true` to hide confidential content marked with specific Obsidian syntax from Claude Code. Useful for vaults containing internal documents or personal secrets.
+Set `OBSIDIAN_HIDE_SECRET=true` to hide confidential content marked with specific Obsidian syntax from Claude Code. Useful for vaults containing internal documents or personal secrets. See [Configuration](#configuration) for how to set this up.
 
 ### Supported syntax
 
@@ -99,86 +165,6 @@ Contact: [SECRET:2]
 - **write**: All `[SECRET:N]` IDs from the original file must be present. The write is allowed if all IDs are accounted for.
 - Adding or removing secrets should be done directly in Obsidian.
 
-### Enabling
-
-Set `OBSIDIAN_HIDE_SECRET` in the `env` section of `.mcp.json`. The easiest way is to copy the sample config:
-
-```sh
-cp dist/mcp.json.secret.example .mcp.json
-# Edit the command path in .mcp.json to point to your binary
-```
-
-## Prerequisites
-
-- [Obsidian](https://obsidian.md/) must be running
-- [Obsidian CLI](https://obsidian.md/help/cli) (`obsidian` command) must be available — install from Obsidian Settings → General → CLI tools
-- [Rust toolchain](https://rustup.rs/) (1.94.0+)
-
-## Setup
-
-```sh
-# 1. Clone the repository
-git clone https://github.com/yutasth/obsidian-cli-for-claude-code.git
-cd obsidian-cli-for-claude-code
-
-# 2. Build
-make build
-
-# 3. Register the MCP server with Claude Code
-claude mcp add obsidian-mcp --scope project -- "$(pwd)/dist/obsidian-mcp"
-```
-
-To use from another project, specify the absolute path to the binary:
-
-```sh
-claude mcp add obsidian-mcp --scope project -- /path/to/dist/obsidian-mcp
-```
-
-Alternatively, copy a sample config from `dist/` and use it as `.mcp.json`:
-
-```sh
-# Standard
-cp dist/mcp.json.example .mcp.json
-
-# With Secret mode enabled
-cp dist/mcp.json.secret.example .mcp.json
-```
-
-`.mcp.json` is the config file where Claude Code reads the MCP server's startup command and environment variables. Use the `env` field to set variables like `OBSIDIAN_HIDE_SECRET`.
-
-## Vault Configuration
-
-Every tool accepts a `vault` parameter, but you can omit it by setting the `OBSIDIAN_VAULT` environment variable. This removes the need to specify the vault on every call — matching the simplicity of Claude Code's built-in tools (Read, Edit, etc.) which have no vault parameter.
-
-```sh
-# Pass the env var when registering the MCP server
-claude mcp add obsidian-mcp --scope project -e OBSIDIAN_VAULT=my-vault -- /path/to/dist/obsidian-mcp
-```
-
-Or set it in `.mcp.json`:
-
-```json
-{
-  "mcpServers": {
-    "obsidian-mcp": {
-      "command": "/path/to/dist/obsidian-mcp",
-      "env": {
-        "OBSIDIAN_VAULT": "my-vault"
-      }
-    }
-  }
-}
-```
-
-An explicit `vault` parameter takes precedence over the environment variable. If you work with multiple vaults, set the default via the env var and override per-call when needed.
-
-## Design
-
-- **Intuitive for Claude Code**: Same parameter scheme as built-in tools. `vault` is optional and defaults to the `OBSIDIAN_VAULT` environment variable
-- **Consistent with Obsidian**: Vault access goes through the official CLI by default, preserving link updates and indexing
-  - Exception: Folder creation (`mkdir`) and deletion (`delete` for folders) are not supported by the CLI, so they operate on the filesystem directly after resolving the vault path
-- **Safe**: Folder deletion is only allowed for empty folders. Path operations outside the vault are guarded
-
 ## Testing
 
 ```sh
@@ -201,6 +187,13 @@ OBSIDIAN_TEST_VAULT=obsidian-mcp-test make test
 ```
 
 Tests create temporary files under `_test_obsidian_mcp/` in the vault and remove the entire directory after completion.
+
+## Design
+
+- **Intuitive for Claude Code**: Same parameter scheme as built-in tools. `vault` is optional and defaults to the `OBSIDIAN_VAULT` environment variable
+- **Consistent with Obsidian**: Vault access goes through the official CLI by default, preserving link updates and indexing
+  - Exception: Folder creation (`mkdir`) and deletion (`delete` for folders) are not supported by the CLI, so they operate on the filesystem directly after resolving the vault path
+- **Safe**: Folder deletion is only allowed for empty folders. Path operations outside the vault are guarded
 
 ## Project Structure
 
