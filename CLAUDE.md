@@ -18,7 +18,8 @@ Obsidian Vault を操作する MCP サーバー。詳細は [README.md](README.m
 
 - `make test-unit` — ユニットテスト（obsidian CLI 不要、純粋ロジックのみ）
 - `OBSIDIAN_TEST_VAULT=<name> make test` — 全テスト（統合テストには Obsidian 起動 + vault が必要）
-- 統合テストは vault 内の `_test_obsidian_mcp/` ディレクトリに一時ファイルを作成し、テスト後に削除する
+- 統合テストは vault 内の `_test_obsidian_mcp/` ディレクトリに一時ファイルを作成し、テスト完了後にディレクトリごと削除する
+- 統合テスト用には専用の vault を作成すること（普段使いの vault は使わない）
 - 新しい統合テストを追加する際は、読み取り専用 → 書き込み系の順で安全側から書く
 - テスト用の vault 名は `OBSIDIAN_TEST_VAULT` 環境変数で指定する（ハードコードしない）
 
@@ -32,6 +33,7 @@ Obsidian Vault を操作する MCP サーバー。詳細は [README.md](README.m
 ### obsidian CLI の呼び出し規約
 
 - Vault アクセスは原則 `obsidian::run(vault, args)` を経由する
+- ツール層では `obsidian::resolve_vault(params.vault)` で vault 名を解決する（`Option<String>` → 環境変数 `OBSIDIAN_VAULT` にフォールバック）
 - 引数は `key=value` 形式の文字列スライス（例: `&["read", "path=note.md"]`）
 - `obsidian` コマンドの `--help` で利用可能なサブコマンドを確認できる
 - obsidian CLI が対応しない操作（mkdir、フォルダ削除）は `obsidian::vault_path()` で vault ルートを解決し、ファイルシステム直接操作で補完する。その際は vault 外パスへのアクセスを必ずガードすること

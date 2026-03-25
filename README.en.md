@@ -146,9 +146,35 @@ cp dist/mcp.json.secret.example .mcp.json
 
 `.mcp.json` is the config file where Claude Code reads the MCP server's startup command and environment variables. Use the `env` field to set variables like `OBSIDIAN_HIDE_SECRET`.
 
+## Vault Configuration
+
+Every tool accepts a `vault` parameter, but you can omit it by setting the `OBSIDIAN_VAULT` environment variable. This removes the need to specify the vault on every call — matching the simplicity of Claude Code's built-in tools (Read, Edit, etc.) which have no vault parameter.
+
+```sh
+# Pass the env var when registering the MCP server
+claude mcp add obsidian-mcp --scope project -e OBSIDIAN_VAULT=my-vault -- /path/to/dist/obsidian-mcp
+```
+
+Or set it in `.mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "obsidian-mcp": {
+      "command": "/path/to/dist/obsidian-mcp",
+      "env": {
+        "OBSIDIAN_VAULT": "my-vault"
+      }
+    }
+  }
+}
+```
+
+An explicit `vault` parameter takes precedence over the environment variable. If you work with multiple vaults, set the default via the env var and override per-call when needed.
+
 ## Design
 
-- **Intuitive for Claude Code**: Same parameter scheme as built-in tools, with an added `vault` parameter
+- **Intuitive for Claude Code**: Same parameter scheme as built-in tools. `vault` is optional and defaults to the `OBSIDIAN_VAULT` environment variable
 - **Consistent with Obsidian**: Vault access goes through the official CLI by default, preserving link updates and indexing
   - Exception: Folder creation (`mkdir`) and deletion (`delete` for folders) are not supported by the CLI, so they operate on the filesystem directly after resolving the vault path
 - **Safe**: Folder deletion is only allowed for empty folders. Path operations outside the vault are guarded
@@ -156,12 +182,25 @@ cp dist/mcp.json.secret.example .mcp.json
 ## Testing
 
 ```sh
-# Unit tests only
+# Unit tests only (no Obsidian required)
 make test-unit
 
 # All tests (integration tests require Obsidian + a vault)
 OBSIDIAN_TEST_VAULT=<vault-name> make test
 ```
+
+### Setting up for integration tests
+
+Integration tests perform real file operations (create, read, edit, delete) against an Obsidian Vault. **It is strongly recommended to create a dedicated vault for testing rather than using your everyday vault.**
+
+1. Create a new vault in Obsidian (e.g. `obsidian-mcp-test`)
+2. With Obsidian running, execute the integration tests:
+
+```sh
+OBSIDIAN_TEST_VAULT=obsidian-mcp-test make test
+```
+
+Tests create temporary files under `_test_obsidian_mcp/` in the vault and remove the entire directory after completion.
 
 ## Project Structure
 

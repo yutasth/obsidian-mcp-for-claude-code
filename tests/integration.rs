@@ -319,10 +319,20 @@ fn test_mkdir_already_exists() {
     obsidian::delete(&vault, &dir, true).expect("Cleanup should succeed");
 }
 
-// Clean up test directory if empty
+// Clean up test directory recursively
 #[test]
 fn test_zz_cleanup_test_dir() {
     let vault = vault();
-    // This runs last due to alphabetical ordering
-    let _ = obsidian::delete(&vault, TEST_DIR, true);
+    // This runs last due to alphabetical ordering.
+    // obsidian::delete only removes empty folders, so use filesystem directly
+    // to clean up nested empty folders left by tests.
+    let vault_root = obsidian::vault_path(&vault).expect("vault_path should succeed");
+    let test_dir = vault_root.join(TEST_DIR);
+    if test_dir.exists() {
+        assert!(
+            test_dir.starts_with(&vault_root),
+            "BUG: test_dir is outside the vault"
+        );
+        std::fs::remove_dir_all(&test_dir).expect("cleanup test dir should succeed");
+    }
 }

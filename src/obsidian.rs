@@ -11,6 +11,18 @@ pub enum ObsidianError {
     Io(#[from] std::io::Error),
 }
 
+/// Resolve vault name from explicit parameter or `OBSIDIAN_VAULT` environment variable.
+pub fn resolve_vault(vault: Option<String>) -> Result<String, ObsidianError> {
+    if let Some(v) = vault {
+        return Ok(v);
+    }
+    std::env::var("OBSIDIAN_VAULT").map_err(|_| {
+        ObsidianError::Cli(
+            "vault not specified and OBSIDIAN_VAULT environment variable is not set".to_string(),
+        )
+    })
+}
+
 /// Execute an obsidian CLI command and return stdout.
 pub fn run(vault: &str, args: &[&str]) -> Result<String, ObsidianError> {
     let mut cmd = Command::new("obsidian");
@@ -260,5 +272,38 @@ mod tests {
         #[allow(unused_variables)]
         let result = replace_content(content, "old text", "new text", false).unwrap();
         assert_eq!(result, "line1\nnew text\nline3");
+    }
+
+    // === resolve_vault tests ===
+
+    #[test]
+    fn test_resolve_vault_explicit_value() {
+        let result = resolve_vault(Some("my-vault".to_string())).unwrap();
+        assert_eq!(result, "my-vault");
+    }
+
+    #[test]
+    fn test_resolve_vault_from_env() {
+        std::env::set_var("OBSIDIAN_VAULT", "env-vault");
+        let result = resolve_vault(None).unwrap();
+        assert_eq!(result, "env-vault");
+        std::env::remove_var("OBSIDIAN_VAULT");
+    }
+
+    #[test]
+    fn test_resolve_vault_explicit_overrides_env() {
+        std::env::set_var("OBSIDIAN_VAULT", "env-vault");
+        let result = resolve_vault(Some("explicit-vault".to_string())).unwrap();
+        assert_eq!(result, "explicit-vault");
+        std::env::remove_var("OBSIDIAN_VAULT");
+    }
+
+    #[test]
+    fn test_resolve_vault_none_without_env_is_error() {
+        std::env::remove_var("OBSIDIAN_VAULT");
+        let result = resolve_vault(None);
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("OBSIDIAN_VAULT"), "Error should mention env var: {err}");
     }
 }
