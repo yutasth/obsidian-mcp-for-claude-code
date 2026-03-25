@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "obsidian-mcp": {
+      "type": "stdio",
+      "command": "./dist/obsidian-mcp",
+      "args": [],
+      "env": {}
+    }
+  }
+}
