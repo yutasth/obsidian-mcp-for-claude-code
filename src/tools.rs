@@ -1,6 +1,6 @@
 use rmcp::handler::server::tool::ToolRouter;
 use rmcp::handler::server::wrapper::Parameters;
-use rmcp::model::ServerInfo;
+use rmcp::model::{ServerInfo, ToolsCapability};
 use rmcp::schemars;
 use rmcp::{ServerHandler, tool, tool_handler, tool_router};
 use serde::Deserialize;
@@ -312,6 +312,7 @@ impl ObsidianTools {
 impl ServerHandler for ObsidianTools {
     fn get_info(&self) -> ServerInfo {
         let mut info = ServerInfo::default();
+        info.capabilities.tools = Some(ToolsCapability::default());
         let hide_secret = if secret::is_enabled() {
             concat!(
                 "\n\n## Secret hiding (currently active)\n",
