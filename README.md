@@ -97,11 +97,7 @@ claude mcp add obsidian-mcp --scope project \
   -- /path/to/dist/obsidian-mcp
 ```
 
-または、`dist/` 内のサンプル設定をコピーして `.mcp.json` として使う:
-
-```sh
-cp dist/mcp.json.example .mcp.json
-```
+または、`.mcp.json` を手動で作成する:
 
 `.mcp.json` の例（全環境変数を設定する場合）:
 
@@ -115,6 +111,21 @@ cp dist/mcp.json.example .mcp.json
         "OBSIDIAN_HIDE_SECRET": "true"
       }
     }
+  }
+}
+```
+
+### ツールの自動許可
+
+毎回の確認を省くには、`.claude/settings.json`（または `.claude/settings.local.json`）でワイルドカード許可を設定する:
+
+```jsonc
+// .claude/settings.json
+{
+  "permissions": {
+    "allow": [
+      "mcp__obsidian-mcp__*"
+    ]
   }
 }
 ```
@@ -207,8 +218,6 @@ tests/
   integration.rs  # 実 vault に対する統合テスト
 dist/
   obsidian-mcp              # リリースバイナリ（make build で生成、git 管理外）
-  mcp.json.example          # MCP 設定テンプレート（通常版）
-  mcp.json.secret.example   # MCP 設定テンプレート（Secret モード有効版）
 Makefile          # build / test / clean
 ```
 

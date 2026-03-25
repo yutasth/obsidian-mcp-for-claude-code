@@ -22,7 +22,8 @@
       "Bash(find:*)",
       "Bash(ls:*)",
       "Bash(rustup:*)",
-      "Bash(cargo test:*)"
+      "Bash(cargo test:*)",
+      "mcp__obsidian-mcp__*"
     ]
   }
 }
