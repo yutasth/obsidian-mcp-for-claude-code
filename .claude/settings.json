@@ -23,7 +23,7 @@
       "Bash(ls:*)",
       "Bash(rustup:*)",
       "Bash(cargo test:*)",
-      "mcp__obsidian-mcp__*"
+      "mcp__obsidian__*"
     ]
   }
 }

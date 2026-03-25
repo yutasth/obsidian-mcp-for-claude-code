@@ -97,29 +97,19 @@ pub fn mkdir(vault: &str, path: &str) -> Result<String, ObsidianError> {
     Ok(format!("Created directory: {path}"))
 }
 
-/// Delete a file or folder from the vault.
-/// Files are deleted via `obsidian delete`. Folders are deleted via filesystem
-/// because the obsidian CLI does not support folder deletion.
-pub fn delete(vault: &str, path: &str, permanent: bool) -> Result<String, ObsidianError> {
-    // First try as a file
+/// Delete a file from the vault via `obsidian delete`.
+pub fn delete_file(vault: &str, path: &str, permanent: bool) -> Result<String, ObsidianError> {
     let path_arg = format!("path={path}");
     let mut args = vec!["delete", &path_arg];
     if permanent {
         args.push("permanent");
     }
-    match run(vault, &args) {
-        Ok(output) if output.contains("is a folder") => {
-            // obsidian CLI returns exit 0 but prints error to stdout for folders
-            // Fall through to folder deletion
-        }
-        Ok(output) => return Ok(output),
-        Err(ObsidianError::Cli(ref msg)) if msg.contains("is a folder") => {
-            // Fall through to folder deletion
-        }
-        Err(e) => return Err(e),
-    }
+    run(vault, &args)
+}
 
-    // It's a folder — resolve vault path and remove via filesystem
+/// Delete an empty folder from the vault via filesystem.
+/// The obsidian CLI does not support folder deletion.
+pub fn delete_folder(vault: &str, path: &str) -> Result<String, ObsidianError> {
     let vault_root = vault_path(vault)?;
     let folder_path = vault_root.join(path);
 

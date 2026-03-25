@@ -4,7 +4,7 @@
 
 An MCP server that lets Claude Code interact with Obsidian Vaults as if they were a local filesystem.
 
-It provides the same interface as Claude Code's built-in tools (Read, Edit, Write, Glob, Grep, LS) for Obsidian Vaults. All vault access goes through the [official Obsidian CLI](https://obsidian.md/help/cli), keeping Obsidian's index and link management intact.
+It provides the same interface as Claude Code's built-in tools (Read, Edit, Write, Glob, Grep) for Obsidian Vaults. All vault access goes through the [official Obsidian CLI](https://obsidian.md/help/cli), keeping Obsidian's index and link management intact.
 
 ## Usage
 
@@ -17,49 +17,51 @@ Deny Claude Code's built-in tools (Read, Edit, Write, Bash, etc.) and allow only
 {
   "permissions": {
     "deny": ["Read", "Edit", "Write", "Bash", "Glob", "Grep"]
-    // obsidian_* tools are automatically available via MCP
+    // MCP read/write/edit tools are automatically available via MCP
   }
 }
 ```
 
-Add the following to CLAUDE.md so Claude Code uses obsidian_* tools instead of built-in ones:
+Add the following to CLAUDE.md so Claude Code uses MCP tools instead of built-in ones:
 
 ```markdown
 # CLAUDE.md
 
-When working with Obsidian Vaults, use MCP obsidian_* tools
-instead of built-in Read/Edit/Write/Glob/Grep:
+Use the MCP equivalents instead of built-in tools for Obsidian Vault operations.
+Each MCP tool mirrors its built-in counterpart on the vault:
 
-- Read → obsidian_read
-- Edit → obsidian_edit
-- Write → obsidian_write
-- Glob → obsidian_glob
-- Grep → obsidian_grep
-- LS → obsidian_ls
-- Move/rename (mv) → obsidian_move
-- Create directory (mkdir) → obsidian_mkdir
-- Delete (rm) → obsidian_delete
+| Built-in tool / command | MCP tool |
+|---|---|
+| Read | mcp__obsidian__Read |
+| Write | mcp__obsidian__Write |
+| Edit | mcp__obsidian__Edit |
+| Glob | mcp__obsidian__Glob |
+| Grep | mcp__obsidian__Grep |
+| mv | mcp__obsidian__mv |
+| mkdir | mcp__obsidian__mkdir |
+| rm | mcp__obsidian__rm |
+| rmdir | mcp__obsidian__rmdir |
 ```
 
-This ensures the agent operates only on the Obsidian Vault without touching the local filesystem.
+This limits the agent's scope to the Obsidian Vault.
 
 ### Adding to your everyday Claude Code
 
-Use alongside built-in tools to reference and update vault notes while coding. Tool names are prefixed with `obsidian_` so they don't conflict with built-in `Read`, `Edit`, etc.
+Use alongside built-in tools to reference and update vault notes while coding. The MCP server name `obsidian` acts as a prefix (`mcp__obsidian__read`, etc.), so they don't conflict with built-in `Read`, `Edit`, etc.
 
 ## Tools
 
 | MCP Tool | Description | Underlying obsidian CLI command |
 |---|---|---|
-| `obsidian_read` | Read a file (with offset/limit) | `obsidian read` |
-| `obsidian_write` | Create or overwrite a file | `obsidian create ... overwrite` |
-| `obsidian_edit` | Edit via string replacement | `obsidian read` → replace → `obsidian create ... overwrite` |
-| `obsidian_glob` | Find files by glob pattern | `obsidian files` + glob-match |
-| `obsidian_grep` | Full-text search | `obsidian search:context` |
-| `obsidian_ls` | List files and folders | `obsidian files` + `obsidian folders` |
-| `obsidian_move` | Move/rename a file (auto-updates links) | `obsidian move` |
-| `obsidian_mkdir` | Create a directory | Direct filesystem operation |
-| `obsidian_delete` | Delete a file or empty folder | `obsidian delete` + filesystem (folders) |
+| `Read` | Read a file (with offset/limit) | `obsidian read` |
+| `Write` | Create or overwrite a file | `obsidian create ... overwrite` |
+| `Edit` | Edit via string replacement | `obsidian read` → replace → `obsidian create ... overwrite` |
+| `Glob` | Find files by glob pattern | `obsidian files` + glob-match |
+| `Grep` | Full-text search | `obsidian search:context` |
+| `mv` | Move/rename a file (auto-updates links) | `obsidian move` |
+| `mkdir` | Create a directory | Direct filesystem operation |
+| `rm` | Delete a file | `obsidian delete` |
+| `rmdir` | Delete an empty folder | Direct filesystem operation |
 
 ## Prerequisites
 
@@ -92,7 +94,7 @@ make build
 With `claude mcp add`, pass environment variables via `-e`:
 
 ```sh
-claude mcp add obsidian-mcp --scope project \
+claude mcp add obsidian --scope project \
   -e OBSIDIAN_VAULT=my-vault \
   -- /path/to/dist/obsidian-mcp
 ```
@@ -104,7 +106,7 @@ Example `.mcp.json` with all environment variables:
 ```json
 {
   "mcpServers": {
-    "obsidian-mcp": {
+    "obsidian": {
       "command": "/path/to/dist/obsidian-mcp",
       "env": {
         "OBSIDIAN_VAULT": "my-vault",
@@ -124,7 +126,7 @@ To skip confirmation prompts, add a wildcard allow rule to `.claude/settings.jso
 {
   "permissions": {
     "allow": [
-      "mcp__obsidian-mcp__*"
+      "mcp__obsidian__*"
     ]
   }
 }

@@ -198,7 +198,7 @@ fn test_delete_file() {
     obsidian::run(&vault, &["create", &format!("path={test_path}"), "content=temp", "overwrite"])
         .expect("Create should succeed");
 
-    let result = obsidian::delete(&vault, &test_path, true);
+    let result = obsidian::delete_file(&vault, &test_path, true);
     assert!(result.is_ok(), "Delete file failed: {:?}", result.err());
 }
 
@@ -217,7 +217,7 @@ fn test_delete_empty_folder() {
         .expect("File delete should succeed");
 
     // Now delete the empty folder
-    let result = obsidian::delete(&vault, &folder, true);
+    let result = obsidian::delete_folder(&vault, &folder);
     assert!(result.is_ok(), "Delete empty folder failed: {:?}", result.err());
 }
 
@@ -231,7 +231,7 @@ fn test_delete_nonempty_folder_fails() {
         .expect("Create should succeed");
 
     // Deleting non-empty folder should fail
-    let result = obsidian::delete(&vault, &folder, true);
+    let result = obsidian::delete_folder(&vault, &folder);
     assert!(result.is_err(), "Should fail to delete non-empty folder");
     let err = result.unwrap_err().to_string();
     assert!(err.contains("not empty"), "Error should mention 'not empty': {err}");
@@ -239,7 +239,7 @@ fn test_delete_nonempty_folder_fails() {
     // Clean up
     obsidian::run(&vault, &["delete", &format!("path={file_path}"), "permanent"])
         .expect("Cleanup file delete should succeed");
-    obsidian::delete(&vault, &folder, true).expect("Cleanup folder delete should succeed");
+    obsidian::delete_folder(&vault, &folder).expect("Cleanup folder delete should succeed");
 }
 
 // ============================================================
@@ -285,7 +285,7 @@ fn test_mkdir_simple() {
     assert!(folder_info.is_ok(), "Folder should exist: {:?}", folder_info.err());
 
     // Clean up
-    obsidian::delete(&vault, &dir, true).expect("Cleanup should succeed");
+    obsidian::delete_folder(&vault, &dir).expect("Cleanup should succeed");
 }
 
 #[test]
@@ -300,9 +300,9 @@ fn test_mkdir_nested() {
     assert!(folder_info.is_ok(), "Nested folder should exist");
 
     // Clean up (deepest first)
-    obsidian::delete(&vault, &format!("{TEST_DIR}/mkdir_nested/a/b"), true).unwrap();
-    obsidian::delete(&vault, &format!("{TEST_DIR}/mkdir_nested/a"), true).unwrap();
-    obsidian::delete(&vault, &format!("{TEST_DIR}/mkdir_nested"), true).unwrap();
+    obsidian::delete_folder(&vault, &format!("{TEST_DIR}/mkdir_nested/a/b")).unwrap();
+    obsidian::delete_folder(&vault, &format!("{TEST_DIR}/mkdir_nested/a")).unwrap();
+    obsidian::delete_folder(&vault, &format!("{TEST_DIR}/mkdir_nested")).unwrap();
 }
 
 #[test]
@@ -316,7 +316,7 @@ fn test_mkdir_already_exists() {
     assert!(result.is_ok(), "Mkdir on existing dir should succeed");
 
     // Clean up
-    obsidian::delete(&vault, &dir, true).expect("Cleanup should succeed");
+    obsidian::delete_folder(&vault, &dir).expect("Cleanup should succeed");
 }
 
 // Clean up test directory recursively
@@ -324,7 +324,7 @@ fn test_mkdir_already_exists() {
 fn test_zz_cleanup_test_dir() {
     let vault = vault();
     // This runs last due to alphabetical ordering.
-    // obsidian::delete only removes empty folders, so use filesystem directly
+    // obsidian::delete_folder only removes empty folders, so use filesystem directly
     // to clean up nested empty folders left by tests.
     let vault_root = obsidian::vault_path(&vault).expect("vault_path should succeed");
     let test_dir = vault_root.join(TEST_DIR);

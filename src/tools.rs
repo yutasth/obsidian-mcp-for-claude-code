@@ -21,6 +21,7 @@ impl ObsidianTools {
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct ReadParams {
     /// Vault name (optional if OBSIDIAN_VAULT env var is set)
     pub vault: Option<String>,
@@ -33,6 +34,7 @@ pub struct ReadParams {
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct WriteParams {
     /// Vault name (optional if OBSIDIAN_VAULT env var is set)
     pub vault: Option<String>,
@@ -43,6 +45,7 @@ pub struct WriteParams {
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct EditParams {
     /// Vault name (optional if OBSIDIAN_VAULT env var is set)
     pub vault: Option<String>,
@@ -57,6 +60,7 @@ pub struct EditParams {
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct GlobParams {
     /// Vault name (optional if OBSIDIAN_VAULT env var is set)
     pub vault: Option<String>,
@@ -65,6 +69,7 @@ pub struct GlobParams {
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct GrepParams {
     /// Vault name (optional if OBSIDIAN_VAULT env var is set)
     pub vault: Option<String>,
@@ -77,14 +82,7 @@ pub struct GrepParams {
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
-pub struct LsParams {
-    /// Vault name (optional if OBSIDIAN_VAULT env var is set)
-    pub vault: Option<String>,
-    /// Folder path to list (omit for vault root)
-    pub path: Option<String>,
-}
-
-#[derive(Debug, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct MoveParams {
     /// Vault name (optional if OBSIDIAN_VAULT env var is set)
     pub vault: Option<String>,
@@ -95,6 +93,7 @@ pub struct MoveParams {
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct MkdirParams {
     /// Vault name (optional if OBSIDIAN_VAULT env var is set)
     pub vault: Option<String>,
@@ -103,20 +102,30 @@ pub struct MkdirParams {
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
-pub struct DeleteParams {
+#[serde(deny_unknown_fields)]
+pub struct RmParams {
     /// Vault name (optional if OBSIDIAN_VAULT env var is set)
     pub vault: Option<String>,
-    /// File or folder path relative to vault root
+    /// File path relative to vault root
     pub path: String,
     /// Skip trash and delete permanently (default: false)
     pub permanent: Option<bool>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct RmdirParams {
+    /// Vault name (optional if OBSIDIAN_VAULT env var is set)
+    pub vault: Option<String>,
+    /// Empty folder path relative to vault root
+    pub path: String,
 }
 
 #[tool_router]
 impl ObsidianTools {
     /// Read a file from the Obsidian vault. Returns the full content of the file.
     /// When OBSIDIAN_HIDE_SECRET is enabled, secrets are replaced with [SECRET:N] placeholders.
-    #[tool(name = "obsidian_read")]
+    #[tool(name = "Read")]
     fn read(&self, Parameters(params): Parameters<ReadParams>) -> Result<String, String> {
         let vault = obsidian::resolve_vault(params.vault).map_err(|e| e.to_string())?;
         let content = obsidian::run(&vault, &["read", &format!("path={}", params.path)])
@@ -134,7 +143,7 @@ impl ObsidianTools {
     /// Create or overwrite a file in the Obsidian vault.
     /// When OBSIDIAN_HIDE_SECRET is enabled, all [SECRET:N] IDs from the original file
     /// must be present in the content. They are expanded back to original text before writing.
-    #[tool(name = "obsidian_write")]
+    #[tool(name = "Write")]
     fn write(&self, Parameters(params): Parameters<WriteParams>) -> Result<String, String> {
         let vault = obsidian::resolve_vault(params.vault).map_err(|e| e.to_string())?;
         let mut content = params.content.clone();
@@ -163,7 +172,7 @@ impl ObsidianTools {
     /// Edit a file in the Obsidian vault by replacing an exact string match. The old_string must be unique in the file.
     /// When OBSIDIAN_HIDE_SECRET is enabled, [SECRET:N] placeholders in old_string/new_string
     /// are expanded to the original content. The number of secrets must not change.
-    #[tool(name = "obsidian_edit")]
+    #[tool(name = "Edit")]
     fn edit(&self, Parameters(params): Parameters<EditParams>) -> Result<String, String> {
         let vault = obsidian::resolve_vault(params.vault).map_err(|e| e.to_string())?;
         let content = obsidian::run(&vault, &["read", &format!("path={}", params.path)])
@@ -193,7 +202,7 @@ impl ObsidianTools {
     }
 
     /// Find files in the Obsidian vault matching a glob pattern (e.g. '**/*.md', 'daily/*.md').
-    #[tool(name = "obsidian_glob")]
+    #[tool(name = "Glob")]
     fn glob(&self, Parameters(params): Parameters<GlobParams>) -> Result<String, String> {
         let vault = obsidian::resolve_vault(params.vault).map_err(|e| e.to_string())?;
         let files_output =
@@ -212,7 +221,7 @@ impl ObsidianTools {
     }
 
     /// Search for text across files in the Obsidian vault. Returns matching files and context.
-    #[tool(name = "obsidian_grep")]
+    #[tool(name = "Grep")]
     fn grep(&self, Parameters(params): Parameters<GrepParams>) -> Result<String, String> {
         let vault = obsidian::resolve_vault(params.vault).map_err(|e| e.to_string())?;
         let mut args = vec![
@@ -240,49 +249,8 @@ impl ObsidianTools {
         }
     }
 
-    /// List files and folders in a vault directory.
-    #[tool(name = "obsidian_ls")]
-    fn ls(&self, Parameters(params): Parameters<LsParams>) -> Result<String, String> {
-        let vault = obsidian::resolve_vault(params.vault).map_err(|e| e.to_string())?;
-        let folder_arg = params.path.as_ref().map(|p| format!("folder={p}"));
-
-        let files_args: Vec<&str> = if let Some(ref fa) = folder_arg {
-            vec!["files", fa]
-        } else {
-            vec!["files"]
-        };
-
-        let folders_args: Vec<&str> = if let Some(ref fa) = folder_arg {
-            vec!["folders", fa]
-        } else {
-            vec!["folders"]
-        };
-
-        let files = obsidian::run(&vault, &files_args).map_err(|e| e.to_string())?;
-        let folders = obsidian::run(&vault, &folders_args).map_err(|e| e.to_string())?;
-
-        let mut result = String::new();
-        if !folders.trim().is_empty() {
-            result.push_str("## Folders\n");
-            result.push_str(folders.trim());
-            result.push('\n');
-        }
-        if !files.trim().is_empty() {
-            if !result.is_empty() {
-                result.push('\n');
-            }
-            result.push_str("## Files\n");
-            result.push_str(files.trim());
-        }
-        if result.is_empty() {
-            result.push_str("Directory is empty.");
-        }
-
-        Ok(result)
-    }
-
     /// Move or rename a file in the Obsidian vault. Obsidian will automatically update internal links.
-    #[tool(name = "obsidian_move")]
+    #[tool(name = "mv")]
     fn mv(&self, Parameters(params): Parameters<MoveParams>) -> Result<String, String> {
         let vault = obsidian::resolve_vault(params.vault).map_err(|e| e.to_string())?;
         obsidian::run(
@@ -293,18 +261,25 @@ impl ObsidianTools {
     }
 
     /// Create a directory in the Obsidian vault.
-    #[tool(name = "obsidian_mkdir")]
+    #[tool(name = "mkdir")]
     fn mkdir(&self, Parameters(params): Parameters<MkdirParams>) -> Result<String, String> {
         let vault = obsidian::resolve_vault(params.vault).map_err(|e| e.to_string())?;
         obsidian::mkdir(&vault, &params.path).map_err(|e| e.to_string())
     }
 
-    /// Delete a file or empty folder from the Obsidian vault.
-    #[tool(name = "obsidian_delete")]
-    fn delete(&self, Parameters(params): Parameters<DeleteParams>) -> Result<String, String> {
+    /// Delete a file from the Obsidian vault.
+    #[tool(name = "rm")]
+    fn rm(&self, Parameters(params): Parameters<RmParams>) -> Result<String, String> {
         let vault = obsidian::resolve_vault(params.vault).map_err(|e| e.to_string())?;
         let permanent = params.permanent.unwrap_or(false);
-        obsidian::delete(&vault, &params.path, permanent).map_err(|e| e.to_string())
+        obsidian::delete_file(&vault, &params.path, permanent).map_err(|e| e.to_string())
+    }
+
+    /// Delete an empty folder from the Obsidian vault.
+    #[tool(name = "rmdir")]
+    fn rmdir(&self, Parameters(params): Parameters<RmdirParams>) -> Result<String, String> {
+        let vault = obsidian::resolve_vault(params.vault).map_err(|e| e.to_string())?;
+        obsidian::delete_folder(&vault, &params.path).map_err(|e| e.to_string())
     }
 }
 
@@ -313,6 +288,11 @@ impl ServerHandler for ObsidianTools {
     fn get_info(&self) -> ServerInfo {
         let mut info = ServerInfo::default();
         info.capabilities.tools = Some(ToolsCapability::default());
+        let vault_note = if std::env::var("OBSIDIAN_VAULT").is_err() {
+            "\n\nThe `vault` parameter is required in every tool call."
+        } else {
+            ""
+        };
         let hide_secret = if secret::is_enabled() {
             concat!(
                 "\n\n## Secret hiding (currently active)\n",
@@ -329,7 +309,7 @@ impl ServerHandler for ObsidianTools {
             ""
         };
         info.instructions = Some(format!(
-            "Obsidian vault tools mirroring Claude Code's Read/Edit/Write/Glob/Grep/LS interface.{hide_secret}"
+            "Obsidian vault tools mirroring Claude Code's Read/Edit/Write/Glob/Grep interface.{vault_note}{hide_secret}"
         ).into());
         info
     }
