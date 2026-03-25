@@ -73,8 +73,8 @@ Obsidian Vault の操作には組み込みツールではなく、同名の MCP 
 
 ```sh
 # 1. リポジトリをクローン
-git clone https://github.com/yutasth/obsidian-cli-for-claude-code.git
-cd obsidian-cli-for-claude-code
+git clone https://github.com/yutasth/obsidian-mcp-for-claude-code.git
+cd obsidian-mcp-for-claude-code
 
 # 2. ビルド
 make build

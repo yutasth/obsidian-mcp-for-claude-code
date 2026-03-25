@@ -73,8 +73,8 @@ Use alongside built-in tools to reference and update vault notes while coding.
 
 ```sh
 # 1. Clone the repository
-git clone https://github.com/yutasth/obsidian-cli-for-claude-code.git
-cd obsidian-cli-for-claude-code
+git clone https://github.com/yutasth/obsidian-mcp-for-claude-code.git
+cd obsidian-mcp-for-claude-code
 
 # 2. Build
 make build
