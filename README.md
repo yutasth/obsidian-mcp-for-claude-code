@@ -1,4 +1,4 @@
-# obsidian-mcp
+# obsidian-mcp-for-claude-code
 
 [English](README.en.md)
 
@@ -47,7 +47,7 @@ Obsidian Vault の操作には組み込みツールではなく、同名の MCP 
 
 ### 普段使いの Claude Code に追加する
 
-組み込みツールと併用すれば、コーディング中に Vault のメモを参照・更新できる。MCP サーバー名 `obsidian` が prefix として付くため（`mcp__obsidian__read` 等）、組み込みの `Read`, `Edit` と衝突しない。
+組み込みツールと併用すれば、コーディング中に Vault のメモを参照・更新できる。
 
 ## 提供ツール
 

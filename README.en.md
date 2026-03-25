@@ -1,4 +1,4 @@
-# obsidian-mcp
+# obsidian-mcp-for-claude-code
 
 [日本語](README.md)
 
@@ -47,7 +47,7 @@ This limits the agent's scope to the Obsidian Vault.
 
 ### Adding to your everyday Claude Code
 
-Use alongside built-in tools to reference and update vault notes while coding. The MCP server name `obsidian` acts as a prefix (`mcp__obsidian__read`, etc.), so they don't conflict with built-in `Read`, `Edit`, etc.
+Use alongside built-in tools to reference and update vault notes while coding.
 
 ## Tools
 
