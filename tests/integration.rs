@@ -42,10 +42,8 @@ fn test_files_list() {
 fn test_glob_md_files() {
     let vault = vault();
     let files_output = obsidian::run(&vault, &["files"]).unwrap();
-    let matched: Vec<&str> = files_output
-        .lines()
-        .filter(|line| glob_match::glob_match("**/*.md", line))
-        .collect();
+    let folders_output = obsidian::run(&vault, &["folders"]).unwrap();
+    let matched = obsidian::glob_match_entries(&files_output, &folders_output, "**/*.md", None);
     assert!(!matched.is_empty(), "Vault should contain at least one .md file");
     assert!(
         matched.iter().all(|f| f.ends_with(".md")),
@@ -57,11 +55,43 @@ fn test_glob_md_files() {
 fn test_glob_no_match() {
     let vault = vault();
     let files_output = obsidian::run(&vault, &["files"]).unwrap();
-    let matched: Vec<&str> = files_output
-        .lines()
-        .filter(|line| glob_match::glob_match("nonexistent_folder_xyz/**/*.md", line))
-        .collect();
+    let folders_output = obsidian::run(&vault, &["folders"]).unwrap();
+    let matched = obsidian::glob_match_entries(&files_output, &folders_output, "nonexistent_folder_xyz/**/*.md", None);
     assert!(matched.is_empty(), "Should match nothing for nonexistent folder");
+}
+
+#[test]
+fn test_glob_directories() {
+    let vault = vault();
+    let files_output = obsidian::run(&vault, &["files"]).unwrap();
+    let folders_output = obsidian::run(&vault, &["folders"]).unwrap();
+    let matched = obsidian::glob_match_entries(&files_output, &folders_output, "**/", None);
+    assert!(!matched.is_empty(), "Vault should contain at least one directory");
+    assert!(
+        matched.iter().all(|d| d.ends_with('/')),
+        "All matched directories should end with /"
+    );
+}
+
+#[test]
+fn test_glob_with_path() {
+    let vault = vault();
+    let test_path = format!("{TEST_DIR}/glob_path_test.md");
+    obsidian::run(&vault, &["create", &format!("path={test_path}"), "content=glob path test", "overwrite"])
+        .expect("Create should succeed");
+
+    let files_output = obsidian::run(&vault, &["files"]).unwrap();
+    let folders_output = obsidian::run(&vault, &["folders"]).unwrap();
+    let matched = obsidian::glob_match_entries(&files_output, &folders_output, "**/*.md", Some(TEST_DIR));
+    assert!(!matched.is_empty(), "Should find .md files under test dir");
+    assert!(
+        matched.iter().all(|f| f.starts_with(TEST_DIR)),
+        "All results should be under {TEST_DIR}"
+    );
+
+    // Clean up
+    obsidian::run(&vault, &["delete", &format!("path={test_path}"), "permanent"])
+        .expect("Cleanup should succeed");
 }
 
 #[test]

@@ -66,6 +66,8 @@ pub struct GlobParams {
     pub vault: Option<String>,
     /// Glob pattern to match (e.g. '**/*.md')
     pub pattern: String,
+    /// Directory to search in (optional, searches entire vault if omitted)
+    pub path: Option<String>,
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
@@ -207,11 +209,10 @@ impl ObsidianTools {
         let vault = obsidian::resolve_vault(params.vault).map_err(|e| e.to_string())?;
         let files_output =
             obsidian::run(&vault, &["files"]).map_err(|e| e.to_string())?;
+        let folders_output =
+            obsidian::run(&vault, &["folders"]).map_err(|e| e.to_string())?;
 
-        let matched: Vec<&str> = files_output
-            .lines()
-            .filter(|line| glob_match::glob_match(&params.pattern, line))
-            .collect();
+        let matched = obsidian::glob_match_entries(&files_output, &folders_output, &params.pattern, params.path.as_deref());
 
         if matched.is_empty() {
             Ok("No files matched.".to_string())

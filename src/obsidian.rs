@@ -113,6 +113,11 @@ pub fn delete_folder(vault: &str, path: &str) -> Result<String, ObsidianError> {
     let vault_root = vault_path(vault)?;
     let folder_path = vault_root.join(path);
 
+    // If folder doesn't exist, treat as success (idempotent)
+    if !folder_path.exists() {
+        return Ok(format!("Deleted folder: {path}"));
+    }
+
     // Safety: ensure the folder is inside the vault
     let canonical_vault = vault_root
         .canonicalize()
@@ -155,6 +160,41 @@ pub fn delete_folder(vault: &str, path: &str) -> Result<String, ObsidianError> {
         .map_err(|e| ObsidianError::Cli(format!("cannot remove folder: {e}")))?;
 
     Ok(format!("Deleted folder: {path}"))
+}
+
+/// Match files and folders against a glob pattern.
+/// Folders are matched with a trailing `/` appended (e.g. `notes/`),
+/// mirroring how Claude Code's Glob treats directories.
+pub fn glob_match_entries(files_output: &str, folders_output: &str, pattern: &str, path: Option<&str>) -> Vec<String> {
+    let prefix = path.map(|p| p.trim_end_matches('/'));
+
+    let in_scope = |entry: &str| -> bool {
+        match prefix {
+            Some(p) => entry.starts_with(p) && entry[p.len()..].starts_with('/'),
+            None => true,
+        }
+    };
+
+    let mut matched: Vec<String> = Vec::new();
+
+    for line in files_output.lines() {
+        if !line.is_empty() && in_scope(line) && glob_match::glob_match(pattern, line) {
+            matched.push(line.to_string());
+        }
+    }
+
+    for line in folders_output.lines() {
+        if !line.is_empty() {
+            let with_slash = format!("{line}/");
+            let matches_pattern = glob_match::glob_match(pattern, &with_slash);
+            if matches_pattern && (in_scope(&with_slash) || prefix == Some(line)) {
+                matched.push(with_slash);
+            }
+        }
+    }
+
+    matched.sort();
+    matched
 }
 
 /// Perform string replacement in content. Returns error if old_string is not found or not unique (when replace_all is false).
@@ -262,6 +302,65 @@ mod tests {
         #[allow(unused_variables)]
         let result = replace_content(content, "old text", "new text", false).unwrap();
         assert_eq!(result, "line1\nnew text\nline3");
+    }
+
+    // === glob_match_entries tests ===
+
+    #[test]
+    fn test_glob_match_entries_files_only() {
+        let files = "notes/hello.md\nnotes/world.md\nREADME.md";
+        let folders = "notes\narchive";
+        let result = glob_match_entries(files, folders, "**/*.md", None);
+        assert_eq!(result, vec!["README.md", "notes/hello.md", "notes/world.md"]);
+    }
+
+    #[test]
+    fn test_glob_match_entries_directories_only() {
+        let files = "notes/hello.md\nREADME.md";
+        let folders = "notes\narchive\narchive/2024";
+        let result = glob_match_entries(files, folders, "**/", None);
+        assert_eq!(result, vec!["archive/", "archive/2024/", "notes/"]);
+    }
+
+    #[test]
+    fn test_glob_match_entries_mixed() {
+        let files = "notes/hello.md\nREADME.md";
+        let folders = "notes";
+        let result = glob_match_entries(files, folders, "notes/**", None);
+        assert!(result.contains(&"notes/hello.md".to_string()));
+    }
+
+    #[test]
+    fn test_glob_match_entries_no_match() {
+        let files = "notes/hello.md";
+        let folders = "notes";
+        let result = glob_match_entries(files, folders, "nonexistent/**", None);
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_glob_match_entries_with_path() {
+        let files = "src/main.rs\nsrc/lib.rs\ntests/integration.rs\nREADME.md";
+        let folders = "src\ntests";
+        let result = glob_match_entries(files, folders, "**/*.rs", Some("src"));
+        assert_eq!(result, vec!["src/lib.rs", "src/main.rs"]);
+    }
+
+    #[test]
+    fn test_glob_match_entries_with_path_trailing_slash() {
+        let files = "src/main.rs\nsrc/lib.rs\ntests/integration.rs";
+        let folders = "src\ntests";
+        // path with trailing slash should work the same
+        let result = glob_match_entries(files, folders, "**/*.rs", Some("src/"));
+        assert_eq!(result, vec!["src/lib.rs", "src/main.rs"]);
+    }
+
+    #[test]
+    fn test_glob_match_entries_with_path_folders() {
+        let files = "src/a.rs\nsrc/sub/b.rs";
+        let folders = "src\nsrc/sub\ntests";
+        let result = glob_match_entries(files, folders, "**/", Some("src"));
+        assert_eq!(result, vec!["src/", "src/sub/"]);
     }
 
     // === resolve_vault tests ===
