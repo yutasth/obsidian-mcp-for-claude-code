@@ -56,12 +56,13 @@ Obsidian Vault の操作には組み込みツールではなく、同名の MCP 
 | `Read` | ファイル読み取り（offset/limit 対応） | `obsidian read` |
 | `Write` | ファイル作成・上書き | `obsidian create ... overwrite` |
 | `Edit` | 文字列置換による編集 | `obsidian read` → 置換 → `obsidian create ... overwrite` |
-| `Glob` | glob パターンでファイル検索 | `obsidian files` + glob-match |
-| `Grep` | テキスト全文検索 | `obsidian search:context` |
+| `Glob` | glob パターンでファイル・ディレクトリ検索（`path` で範囲限定可、`_directory_descriptions.md` によるディレクトリ説明付与） | `obsidian files` + `obsidian folders` + glob-match |
+| `Grep` | テキスト全文検索（`output_mode`: content/files_with_matches/count、`head_limit`、`glob` フィルタ対応） | `obsidian search:context` |
 | `mv` | ファイルの移動・リネーム（リンク自動更新） | `obsidian move` |
-| `mkdir` | ディレクトリ作成 | ファイルシステム直接操作 |
+| `mkdir` | ディレクトリ作成（`description` で説明も同時設定可） | ファイルシステム直接操作 |
 | `rm` | ファイルの削除 | `obsidian delete` |
-| `rmdir` | 空フォルダの削除 | ファイルシステム直接操作 |
+| `rmdir` | 空ディレクトリの削除（説明も自動削除） | ファイルシステム直接操作 |
+| `update_directory_description` | ディレクトリ説明の更新・削除（`_directory_descriptions.md` を管理） | `obsidian read` → 更新 → `obsidian create ... overwrite` |
 
 ## 前提条件
 

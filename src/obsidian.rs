@@ -197,6 +197,58 @@ pub fn glob_match_entries(files_output: &str, folders_output: &str, pattern: &st
     matched
 }
 
+/// Format grep results from obsidian search:context JSON output.
+///
+/// Supports output modes: "content" (file:line: text), "files_with_matches" (file paths only),
+/// "count" (file:match_count). Optional head_limit caps total output lines.
+/// Optional glob filter restricts results to matching file paths.
+pub fn format_grep_results(json: &str, output_mode: &str, head_limit: Option<usize>, glob: Option<&str>) -> String {
+    let entries: Vec<serde_json::Value> = serde_json::from_str(json).unwrap_or_default();
+
+    let mut lines: Vec<String> = Vec::new();
+    let limit = head_limit.unwrap_or(usize::MAX);
+
+    for entry in &entries {
+        let file = entry["file"].as_str().unwrap_or("");
+        if let Some(pattern) = glob {
+            if !glob_match::glob_match(pattern, file) {
+                continue;
+            }
+        }
+
+        match output_mode {
+            "files_with_matches" => {
+                if lines.len() >= limit {
+                    break;
+                }
+                lines.push(file.to_string());
+            }
+            "count" => {
+                if lines.len() >= limit {
+                    break;
+                }
+                let count = entry["matches"].as_array().map(|a| a.len()).unwrap_or(0);
+                lines.push(format!("{file}:{count}"));
+            }
+            _ => {
+                // "content" mode
+                if let Some(matches) = entry["matches"].as_array() {
+                    for m in matches {
+                        if lines.len() >= limit {
+                            break;
+                        }
+                        let line_num = m["line"].as_u64().unwrap_or(0);
+                        let text = m["text"].as_str().unwrap_or("");
+                        lines.push(format!("{file}:{line_num}: {text}"));
+                    }
+                }
+            }
+        }
+    }
+
+    lines.join("\n")
+}
+
 /// Parse a Markdown table of folder descriptions.
 /// Expected format: `| path/ | description |` rows in a Markdown table.
 /// Header rows and separator rows (`| --- | --- |`) are skipped.
@@ -228,6 +280,39 @@ pub fn parse_folder_descriptions(md: &str) -> std::collections::HashMap<String, 
         }
     }
     map
+}
+
+/// Add, update, or remove a folder description entry.
+/// If `description` is Some, the entry is added or updated. If None, the entry is removed.
+/// The `path` should end with `/`.
+pub fn update_folder_description(
+    map: &mut std::collections::HashMap<String, String>,
+    path: &str,
+    description: Option<&str>,
+) {
+    match description {
+        Some(desc) => {
+            map.insert(path.to_string(), desc.to_string());
+        }
+        None => {
+            map.remove(path);
+        }
+    }
+}
+
+/// Render folder descriptions as a Markdown table.
+pub fn render_folder_descriptions(map: &std::collections::HashMap<String, String>) -> String {
+    let mut lines = vec![
+        "| パス | 説明 |".to_string(),
+        "| --- | --- |".to_string(),
+    ];
+    let mut paths: Vec<&String> = map.keys().collect();
+    paths.sort();
+    for path in paths {
+        let desc = &map[path];
+        lines.push(format!("| {path} | {desc} |"));
+    }
+    lines.join("\n") + "\n"
 }
 
 /// Annotate glob entries with folder descriptions where available.
@@ -409,6 +494,107 @@ mod tests {
         let folders = "src\nsrc/sub\ntests";
         let result = glob_match_entries(files, folders, "**/", Some("src"));
         assert_eq!(result, vec!["src/", "src/sub/"]);
+    }
+
+    // === format_grep_results tests ===
+
+    #[test]
+    fn test_format_grep_content() {
+        let json = r#"[{"file":"notes/a.md","matches":[{"line":3,"text":"hello world"},{"line":7,"text":"hello again"}]},{"file":"notes/b.md","matches":[{"line":1,"text":"hello there"}]}]"#;
+        let result = format_grep_results(json, "content", None, None);
+        assert_eq!(result, "notes/a.md:3: hello world\nnotes/a.md:7: hello again\nnotes/b.md:1: hello there");
+    }
+
+    #[test]
+    fn test_format_grep_files_with_matches() {
+        let json = r#"[{"file":"notes/a.md","matches":[{"line":3,"text":"hello"}]},{"file":"notes/b.md","matches":[{"line":1,"text":"hello"}]}]"#;
+        let result = format_grep_results(json, "files_with_matches", None, None);
+        assert_eq!(result, "notes/a.md\nnotes/b.md");
+    }
+
+    #[test]
+    fn test_format_grep_count() {
+        let json = r#"[{"file":"notes/a.md","matches":[{"line":3,"text":"hello"},{"line":7,"text":"hello"}]},{"file":"notes/b.md","matches":[{"line":1,"text":"hello"}]}]"#;
+        let result = format_grep_results(json, "count", None, None);
+        assert_eq!(result, "notes/a.md:2\nnotes/b.md:1");
+    }
+
+    #[test]
+    fn test_format_grep_with_head_limit() {
+        let json = r#"[{"file":"notes/a.md","matches":[{"line":3,"text":"hello"},{"line":7,"text":"hello again"},{"line":10,"text":"hello once more"}]}]"#;
+        let result = format_grep_results(json, "content", Some(2), None);
+        assert_eq!(result, "notes/a.md:3: hello\nnotes/a.md:7: hello again");
+    }
+
+    #[test]
+    fn test_format_grep_with_glob_filter() {
+        let json = r#"[{"file":"notes/a.md","matches":[{"line":3,"text":"hello"}]},{"file":"notes/b.txt","matches":[{"line":1,"text":"hello"}]}]"#;
+        let result = format_grep_results(json, "files_with_matches", None, Some("**/*.md"));
+        assert_eq!(result, "notes/a.md");
+    }
+
+    #[test]
+    fn test_format_grep_empty() {
+        let json = "[]";
+        let result = format_grep_results(json, "content", None, None);
+        assert_eq!(result, "");
+    }
+
+    // === update_folder_description / render_folder_descriptions tests ===
+
+    #[test]
+    fn test_update_folder_description_add_new() {
+        let mut map = std::collections::HashMap::new();
+        map.insert("_diary/".to_string(), "日々のメモ".to_string());
+        update_folder_description(&mut map, "指針/", Some("価値観"));
+        assert_eq!(map.len(), 2);
+        assert_eq!(map.get("指針/").map(|s| s.as_str()), Some("価値観"));
+    }
+
+    #[test]
+    fn test_update_folder_description_update_existing() {
+        let mut map = std::collections::HashMap::new();
+        map.insert("_diary/".to_string(), "日々のメモ".to_string());
+        update_folder_description(&mut map, "_diary/", Some("更新された説明"));
+        assert_eq!(map.len(), 1);
+        assert_eq!(map.get("_diary/").map(|s| s.as_str()), Some("更新された説明"));
+    }
+
+    #[test]
+    fn test_update_folder_description_remove() {
+        let mut map = std::collections::HashMap::new();
+        map.insert("_diary/".to_string(), "日々のメモ".to_string());
+        map.insert("指針/".to_string(), "価値観".to_string());
+        update_folder_description(&mut map, "_diary/", None);
+        assert_eq!(map.len(), 1);
+        assert!(!map.contains_key("_diary/"));
+    }
+
+    #[test]
+    fn test_render_folder_descriptions() {
+        let mut map = std::collections::HashMap::new();
+        map.insert("_diary/".to_string(), "日々のメモ".to_string());
+        map.insert("指針/".to_string(), "価値観".to_string());
+        let rendered = render_folder_descriptions(&map);
+        assert!(rendered.starts_with("| パス | 説明 |\n| --- | --- |\n"));
+        assert!(rendered.contains("| _diary/ | 日々のメモ |"));
+        assert!(rendered.contains("| 指針/ | 価値観 |"));
+    }
+
+    #[test]
+    fn test_render_folder_descriptions_empty() {
+        let map = std::collections::HashMap::new();
+        let rendered = render_folder_descriptions(&map);
+        assert_eq!(rendered, "| パス | 説明 |\n| --- | --- |\n");
+    }
+
+    #[test]
+    fn test_roundtrip_parse_render() {
+        let original = "| パス | 説明 |\n| --- | --- |\n| _diary/ | 日々のメモ |\n| 指針/ | 価値観 |\n";
+        let map = parse_folder_descriptions(original);
+        let rendered = render_folder_descriptions(&map);
+        let reparsed = parse_folder_descriptions(&rendered);
+        assert_eq!(map, reparsed);
     }
 
     // === parse_folder_descriptions / annotate_entries tests ===

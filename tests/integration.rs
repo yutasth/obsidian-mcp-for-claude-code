@@ -146,6 +146,59 @@ fn test_search() {
         .expect("Cleanup should succeed");
 }
 
+#[test]
+fn test_grep_format_content() {
+    let vault = vault();
+    let test_path = format!("{TEST_DIR}/grep_test.md");
+    obsidian::run(&vault, &["create", &format!("path={test_path}"), "content=unique_grep_marker_abc987", "overwrite"])
+        .expect("Create should succeed");
+
+    let json = obsidian::run(&vault, &["search:context", "query=unique_grep_marker_abc987", "format=json"])
+        .expect("Search should succeed");
+    let result = obsidian::format_grep_results(&json, "content", None, None);
+    assert!(result.contains("unique_grep_marker_abc987"), "Content mode should include matching text");
+    assert!(result.contains(&test_path), "Content mode should include file path");
+
+    // Clean up
+    obsidian::run(&vault, &["delete", &format!("path={test_path}"), "permanent"])
+        .expect("Cleanup should succeed");
+}
+
+#[test]
+fn test_grep_format_files_with_matches() {
+    let vault = vault();
+    let test_path = format!("{TEST_DIR}/grep_files_test.md");
+    obsidian::run(&vault, &["create", &format!("path={test_path}"), "content=unique_grep_files_def456", "overwrite"])
+        .expect("Create should succeed");
+
+    let json = obsidian::run(&vault, &["search:context", "query=unique_grep_files_def456", "format=json"])
+        .expect("Search should succeed");
+    let result = obsidian::format_grep_results(&json, "files_with_matches", None, None);
+    assert_eq!(result.trim(), test_path, "files_with_matches should return only the file path");
+
+    // Clean up
+    obsidian::run(&vault, &["delete", &format!("path={test_path}"), "permanent"])
+        .expect("Cleanup should succeed");
+}
+
+#[test]
+fn test_grep_format_count() {
+    let vault = vault();
+    let test_path = format!("{TEST_DIR}/grep_count_test.md");
+    obsidian::run(&vault, &["create", &format!("path={test_path}"), "content=unique_grep_count_ghi789", "overwrite"])
+        .expect("Create should succeed");
+
+    let json = obsidian::run(&vault, &["search:context", "query=unique_grep_count_ghi789", "format=json"])
+        .expect("Search should succeed");
+    let result = obsidian::format_grep_results(&json, "count", None, None);
+    assert!(result.starts_with(&test_path), "Count mode should start with file path");
+    assert!(result.contains(':'), "Count mode should have path:count format");
+
+    // Clean up
+    obsidian::run(&vault, &["delete", &format!("path={test_path}"), "permanent"])
+        .expect("Cleanup should succeed");
+}
+
 // ============================================================
 // Write tests (create temp files, verify, clean up)
 // ============================================================

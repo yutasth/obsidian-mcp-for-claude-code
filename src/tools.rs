@@ -75,12 +75,20 @@ pub struct GlobParams {
 pub struct GrepParams {
     /// Vault name (optional if OBSIDIAN_VAULT env var is set)
     pub vault: Option<String>,
-    /// Search query text
-    pub query: String,
-    /// Limit to a specific folder path
+    /// The search pattern (plain text)
+    pub pattern: String,
+    /// File or directory to search in (limits to a specific folder path)
     pub path: Option<String>,
-    /// Case sensitive search (default: false)
-    pub case_sensitive: Option<bool>,
+    /// Case insensitive search (default: false)
+    #[serde(rename = "-i")]
+    pub case_insensitive: Option<bool>,
+    /// Output mode: "content" shows matching lines with line numbers (default),
+    /// "files_with_matches" shows only file paths, "count" shows match counts per file
+    pub output_mode: Option<String>,
+    /// Limit output to first N entries
+    pub head_limit: Option<usize>,
+    /// Glob pattern to filter files (e.g. "**/*.md")
+    pub glob: Option<String>,
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
@@ -99,8 +107,10 @@ pub struct MoveParams {
 pub struct MkdirParams {
     /// Vault name (optional if OBSIDIAN_VAULT env var is set)
     pub vault: Option<String>,
-    /// Folder path to create relative to vault root
+    /// Directory path to create relative to vault root
     pub path: String,
+    /// Description for the directory (stored in _directory_descriptions.md)
+    pub description: Option<String>,
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
@@ -119,8 +129,21 @@ pub struct RmParams {
 pub struct RmdirParams {
     /// Vault name (optional if OBSIDIAN_VAULT env var is set)
     pub vault: Option<String>,
-    /// Empty folder path relative to vault root
+    /// Empty directory path relative to vault root
     pub path: String,
+}
+
+const DIRECTORY_DESCRIPTIONS_PATH: &str = "_directory_descriptions.md";
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct UpdateDirectoryDescriptionParams {
+    /// Vault name (optional if OBSIDIAN_VAULT env var is set)
+    pub vault: Option<String>,
+    /// Directory path (e.g. 'notes/' or 'notes')
+    pub path: String,
+    /// Description text. If omitted, the entry is removed.
+    pub description: Option<String>,
 }
 
 #[tool_router]
@@ -205,7 +228,7 @@ impl ObsidianTools {
 
     /// Find files in the Obsidian vault matching a glob pattern (e.g. '**/*.md', 'daily/*.md').
     /// Directory entries (ending with `/`) may include a tab-separated description when a
-    /// `_フォルダ説明.md` file exists at the vault root.
+    /// `_directory_descriptions.md` file exists at the vault root.
     /// Output format: one entry per line. Directories with descriptions use `path/\tdescription`.
     #[tool(name = "Glob")]
     fn glob(&self, Parameters(params): Parameters<GlobParams>) -> Result<String, String> {
@@ -222,7 +245,7 @@ impl ObsidianTools {
         }
 
         // Load folder descriptions if available
-        let descriptions = obsidian::run(&vault, &["read", "path=_フォルダ説明.md"])
+        let descriptions = obsidian::run(&vault, &["read", &format!("path={DIRECTORY_DESCRIPTIONS_PATH}")])
             .ok()
             .map(|content| obsidian::parse_folder_descriptions(&content))
             .unwrap_or_default();
@@ -231,29 +254,40 @@ impl ObsidianTools {
         Ok(annotated.join("\n"))
     }
 
-    /// Search for text across files in the Obsidian vault. Returns matching files and context.
+    /// Search for text across files in the Obsidian vault.
+    /// Output modes: "content" (default) shows `file:line: text`, "files_with_matches" shows file paths only, "count" shows match counts.
     #[tool(name = "Grep")]
     fn grep(&self, Parameters(params): Parameters<GrepParams>) -> Result<String, String> {
         let vault = obsidian::resolve_vault(params.vault).map_err(|e| e.to_string())?;
         let mut args = vec![
             "search:context".to_string(),
-            format!("query={}", params.query),
+            format!("query={}", params.pattern),
             "format=json".to_string(),
         ];
         if let Some(ref p) = params.path {
             args.push(format!("path={p}"));
         }
-        if params.case_sensitive.unwrap_or(false) {
+        if !params.case_insensitive.unwrap_or(false) {
             args.push("case".to_string());
         }
         let args_refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
 
-        let result = obsidian::run(&vault, &args_refs).map_err(|e| e.to_string())?;
+        let json = obsidian::run(&vault, &args_refs).map_err(|e| e.to_string())?;
+
+        let output_mode = params.output_mode.as_deref().unwrap_or("content");
+        let result = obsidian::format_grep_results(
+            &json,
+            output_mode,
+            params.head_limit,
+            params.glob.as_deref(),
+        );
+
+        if result.is_empty() {
+            return Ok("No matches found.".to_string());
+        }
 
         if secret::is_enabled() {
             let masked = secret::mask(&result).masked;
-            // Filter out result lines that contain secrets to prevent leaking
-            // the fact that a search term matched inside a secret region
             Ok(secret::filter_secret_lines(&masked))
         } else {
             Ok(result)
@@ -272,10 +306,17 @@ impl ObsidianTools {
     }
 
     /// Create a directory in the Obsidian vault.
+    /// If `description` is provided, it is stored in `_directory_descriptions.md` for Glob output.
     #[tool(name = "mkdir")]
     fn mkdir(&self, Parameters(params): Parameters<MkdirParams>) -> Result<String, String> {
         let vault = obsidian::resolve_vault(params.vault).map_err(|e| e.to_string())?;
-        obsidian::mkdir(&vault, &params.path).map_err(|e| e.to_string())
+        let result = obsidian::mkdir(&vault, &params.path).map_err(|e| e.to_string())?;
+
+        if let Some(desc) = params.description {
+            set_directory_description(&vault, &params.path, Some(&desc))?;
+        }
+
+        Ok(result)
     }
 
     /// Delete a file from the Obsidian vault.
@@ -286,12 +327,67 @@ impl ObsidianTools {
         obsidian::delete_file(&vault, &params.path, permanent).map_err(|e| e.to_string())
     }
 
-    /// Delete an empty folder from the Obsidian vault.
+    /// Delete an empty directory from the Obsidian vault.
+    /// Also removes the directory's description from `_directory_descriptions.md` if present.
     #[tool(name = "rmdir")]
     fn rmdir(&self, Parameters(params): Parameters<RmdirParams>) -> Result<String, String> {
         let vault = obsidian::resolve_vault(params.vault).map_err(|e| e.to_string())?;
-        obsidian::delete_folder(&vault, &params.path).map_err(|e| e.to_string())
+        let result = obsidian::delete_folder(&vault, &params.path).map_err(|e| e.to_string())?;
+
+        // Clean up description (ignore errors — file may not exist)
+        let _ = set_directory_description(&vault, &params.path, None);
+
+        Ok(result)
     }
+
+    /// Update or remove a directory description used by Glob output.
+    /// Descriptions are stored in `_directory_descriptions.md` as a Markdown table.
+    /// If `description` is provided, the entry is added or updated.
+    /// If `description` is omitted, the entry is removed.
+    #[tool(name = "update_directory_description")]
+    fn update_directory_description(&self, Parameters(params): Parameters<UpdateDirectoryDescriptionParams>) -> Result<String, String> {
+        let vault = obsidian::resolve_vault(params.vault).map_err(|e| e.to_string())?;
+        let path = normalize_dir_path(&params.path);
+
+        set_directory_description(&vault, &path, params.description.as_deref())?;
+
+        if params.description.is_some() {
+            Ok(format!("Updated description for {path}"))
+        } else {
+            Ok(format!("Removed description for {path}"))
+        }
+    }
+}
+
+/// Normalize a directory path to end with '/'.
+fn normalize_dir_path(path: &str) -> String {
+    if path.ends_with('/') {
+        path.to_string()
+    } else {
+        format!("{path}/")
+    }
+}
+
+/// Read, update, and write back the directory descriptions file.
+fn set_directory_description(vault: &str, path: &str, description: Option<&str>) -> Result<(), String> {
+    let path = normalize_dir_path(path);
+
+    let existing = obsidian::run(vault, &["read", &format!("path={DIRECTORY_DESCRIPTIONS_PATH}")])
+        .unwrap_or_default();
+    let mut map = obsidian::parse_folder_descriptions(&existing);
+
+    obsidian::update_folder_description(&mut map, &path, description);
+
+    let rendered = obsidian::render_folder_descriptions(&map);
+    let args = vec![
+        "create".to_string(),
+        format!("path={DIRECTORY_DESCRIPTIONS_PATH}"),
+        format!("content={rendered}"),
+        "overwrite".to_string(),
+    ];
+    let args_refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
+    obsidian::run(vault, &args_refs).map_err(|e| e.to_string())?;
+    Ok(())
 }
 
 #[tool_handler]

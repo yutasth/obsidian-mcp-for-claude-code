@@ -56,12 +56,13 @@ Use alongside built-in tools to reference and update vault notes while coding.
 | `Read` | Read a file (with offset/limit) | `obsidian read` |
 | `Write` | Create or overwrite a file | `obsidian create ... overwrite` |
 | `Edit` | Edit via string replacement | `obsidian read` → replace → `obsidian create ... overwrite` |
-| `Glob` | Find files by glob pattern | `obsidian files` + glob-match |
-| `Grep` | Full-text search | `obsidian search:context` |
+| `Glob` | Find files/directories by glob pattern (`path` scoping, directory descriptions via `_directory_descriptions.md`) | `obsidian files` + `obsidian folders` + glob-match |
+| `Grep` | Full-text search (`output_mode`: content/files_with_matches/count, `head_limit`, `glob` filter) | `obsidian search:context` |
 | `mv` | Move/rename a file (auto-updates links) | `obsidian move` |
-| `mkdir` | Create a directory | Direct filesystem operation |
+| `mkdir` | Create a directory (optional `description` to set description) | Direct filesystem operation |
 | `rm` | Delete a file | `obsidian delete` |
-| `rmdir` | Delete an empty folder | Direct filesystem operation |
+| `rmdir` | Delete an empty directory (also removes its description) | Direct filesystem operation |
+| `update_directory_description` | Update or remove a directory description (manages `_directory_descriptions.md`) | `obsidian read` → update → `obsidian create ... overwrite` |
 
 ## Prerequisites
 
