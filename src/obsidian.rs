@@ -197,6 +197,54 @@ pub fn glob_match_entries(files_output: &str, folders_output: &str, pattern: &st
     matched
 }
 
+/// Parse a Markdown table of folder descriptions.
+/// Expected format: `| path/ | description |` rows in a Markdown table.
+/// Header rows and separator rows (`| --- | --- |`) are skipped.
+pub fn parse_folder_descriptions(md: &str) -> std::collections::HashMap<String, String> {
+    let mut map = std::collections::HashMap::new();
+    for line in md.lines() {
+        let trimmed = line.trim();
+        // Only process lines that look like table rows
+        if !trimmed.starts_with('|') || !trimmed.ends_with('|') {
+            continue;
+        }
+        let cells: Vec<&str> = trimmed
+            .trim_matches('|')
+            .splitn(2, '|')
+            .map(|s| s.trim())
+            .collect();
+        if cells.len() != 2 {
+            continue;
+        }
+        let path = cells[0];
+        let desc = cells[1];
+        // Skip separator rows (e.g. "---", "------") and header rows
+        if path.is_empty() || desc.is_empty() || path.chars().all(|c| c == '-' || c == ' ') {
+            continue;
+        }
+        // Only accept paths ending with '/' (directories)
+        if path.ends_with('/') {
+            map.insert(path.to_string(), desc.to_string());
+        }
+    }
+    map
+}
+
+/// Annotate glob entries with folder descriptions where available.
+/// Directories with a matching description get `path/\tdescription`, others remain unchanged.
+pub fn annotate_entries(entries: &[String], descriptions: &std::collections::HashMap<String, String>) -> Vec<String> {
+    entries
+        .iter()
+        .map(|entry| {
+            if let Some(desc) = descriptions.get(entry.as_str()) {
+                format!("{entry}\t{desc}")
+            } else {
+                entry.clone()
+            }
+        })
+        .collect()
+}
+
 /// Perform string replacement in content. Returns error if old_string is not found or not unique (when replace_all is false).
 pub fn replace_content(
     content: &str,
@@ -361,6 +409,61 @@ mod tests {
         let folders = "src\nsrc/sub\ntests";
         let result = glob_match_entries(files, folders, "**/", Some("src"));
         assert_eq!(result, vec!["src/", "src/sub/"]);
+    }
+
+    // === parse_folder_descriptions / annotate_entries tests ===
+
+    #[test]
+    fn test_parse_folder_descriptions() {
+        let md = "| パス | 説明 |\n|------|------|\n| _diary/ | 日々のメモ |\n| ふりかえり/ | 定期的な反省 |\n";
+        let map = parse_folder_descriptions(md);
+        assert_eq!(map.get("_diary/").map(|s| s.as_str()), Some("日々のメモ"));
+        assert_eq!(map.get("ふりかえり/").map(|s| s.as_str()), Some("定期的な反省"));
+        assert_eq!(map.len(), 2);
+    }
+
+    #[test]
+    fn test_parse_folder_descriptions_ignores_non_table_lines() {
+        let md = "# フォルダ説明\n\n| パス | 説明 |\n|------|------|\n| _diary/ | 日々のメモ |\n\nこれは普通のテキスト\n";
+        let map = parse_folder_descriptions(md);
+        assert_eq!(map.len(), 1);
+        assert_eq!(map.get("_diary/").map(|s| s.as_str()), Some("日々のメモ"));
+    }
+
+    #[test]
+    fn test_parse_folder_descriptions_ignores_header_and_separator() {
+        let md = "| パス | 説明 |\n| --- | --- |\n| 指針/ | 価値観 |\n";
+        let map = parse_folder_descriptions(md);
+        assert_eq!(map.len(), 1);
+        assert_eq!(map.get("指針/").map(|s| s.as_str()), Some("価値観"));
+    }
+
+    #[test]
+    fn test_annotate_entries_with_descriptions() {
+        let entries = vec![
+            "_diary/".to_string(),
+            "ふりかえり/".to_string(),
+            "ふりかえり/四半期/".to_string(),
+            "TODO.md".to_string(),
+        ];
+        let mut descs = std::collections::HashMap::new();
+        descs.insert("_diary/".to_string(), "日々のメモ".to_string());
+        descs.insert("ふりかえり/".to_string(), "定期的な反省".to_string());
+
+        let result = annotate_entries(&entries, &descs);
+        assert_eq!(result[0], "_diary/\t日々のメモ");
+        assert_eq!(result[1], "ふりかえり/\t定期的な反省");
+        assert_eq!(result[2], "ふりかえり/四半期/");
+        assert_eq!(result[3], "TODO.md");
+    }
+
+    #[test]
+    fn test_annotate_entries_empty_descriptions() {
+        let entries = vec!["_diary/".to_string(), "TODO.md".to_string()];
+        let descs = std::collections::HashMap::new();
+        let result = annotate_entries(&entries, &descs);
+        assert_eq!(result[0], "_diary/");
+        assert_eq!(result[1], "TODO.md");
     }
 
     // === resolve_vault tests ===

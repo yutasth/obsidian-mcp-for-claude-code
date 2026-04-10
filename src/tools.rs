@@ -204,6 +204,9 @@ impl ObsidianTools {
     }
 
     /// Find files in the Obsidian vault matching a glob pattern (e.g. '**/*.md', 'daily/*.md').
+    /// Directory entries (ending with `/`) may include a tab-separated description when a
+    /// `_フォルダ説明.md` file exists at the vault root.
+    /// Output format: one entry per line. Directories with descriptions use `path/\tdescription`.
     #[tool(name = "Glob")]
     fn glob(&self, Parameters(params): Parameters<GlobParams>) -> Result<String, String> {
         let vault = obsidian::resolve_vault(params.vault).map_err(|e| e.to_string())?;
@@ -215,10 +218,17 @@ impl ObsidianTools {
         let matched = obsidian::glob_match_entries(&files_output, &folders_output, &params.pattern, params.path.as_deref());
 
         if matched.is_empty() {
-            Ok("No files matched.".to_string())
-        } else {
-            Ok(matched.join("\n"))
+            return Ok("No files matched.".to_string());
         }
+
+        // Load folder descriptions if available
+        let descriptions = obsidian::run(&vault, &["read", "path=_フォルダ説明.md"])
+            .ok()
+            .map(|content| obsidian::parse_folder_descriptions(&content))
+            .unwrap_or_default();
+
+        let annotated = obsidian::annotate_entries(&matched, &descriptions);
+        Ok(annotated.join("\n"))
     }
 
     /// Search for text across files in the Obsidian vault. Returns matching files and context.
